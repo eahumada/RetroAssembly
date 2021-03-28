@@ -1,0 +1,472 @@
+mads 2.1.2
+Source: /Users/eahumada/Projects/GitHub/eahumada/RetroAssembly/Atari800/MADS/cio.asm
+     1 				;
+     2 				; Example of creating a DOS friendly program using CIOV on Atari
+     3 				;	- How to find an available channel
+     4 				;	- Open screen and keyboard
+     5 				;	- Open and read files
+     6 				;	- Print Strings with and without carriage return
+     7 				;	- Print character(s)
+     8 				;
+     9 				; by Norman Davie
+    10 				;
+    11 				; Assembled using WUSDN / MADS
+    12 				;
+    13 				; https://cowboy3398.wordpress.com/2020/11/10/cio-assembly-example-for-atari-8-bit/
+    14 				;
+    15
+    16 				 	ORG  $6000
+    17 				;
+    18 = 0019			BUFLEN 			= 25
+    19 				;
+    20 = 009B			EOL   			= $9B 	; ATASCII code for end of line
+    21 				;	
+    22 = 0003			CMD_OPEN 		= $03 	; Open a device or file
+    23 = 0009			CMD_PUT_REC 		= $09   ; Send until EOL 
+    24 = 000B			CMD_PUT_CHAR   		= $0B   ; Read specified number of characters
+    25 = 000C			CMD_CLOSE 		= $0C 	; Close device or file
+    26 = 0005			CMD_GET_REC 		= $05	; Read until EOL or buffer full
+    27 = 0007			CMD_GET_CHAR		= $07	; Read specified number of characters
+    28 				;
+    29 				; OPTIONS FOR OPEN ICAX1
+    30 = 0004			OREAD  	 		= $04 	; Read Only
+    31 = 0008			OWRITE   		= $08  	; Write Only
+    32 = 000C			OUPDATE  		= $0C  	; Read and write
+    33 = 0002			ODIR     		= $02  	; Directory
+    34 = 0006			ORDIR    		= $06  	; Read Directory
+    35 = 0001			OAPPEND  		= $01  	; Append
+    36 = 0009			OWAPPEND 		= $09  	; Write Append
+    37 = 0010			SCLEAR_GT		= $10  	; Clear Graphics and Text
+    38 = 0020			SKEEP_GT 		= $20  	; Keep Graphics and Text
+    39 = 0030			SCLEAR_T 		= $30  	; Clear Text
+    40
+    41 = 0088			EOFERR   		= $88   ;(136) END OF FILE
+    42
+    43 = 0340			ICHID   		= $0340     ;   Set by OS. Handler Identifier. If not 
+    44 				        		            ;   in use, the value is 255 ($FF), which 
+    45 				        		            ;   is also the initialization value.
+    46 = 0341			ICDNO   		= ICHID+1   ;   Set by OS. Device number (eg: D1: D2:).
+    47 = 0342			ICCOM   		= ICHID+2   ;   Set by User. Command
+    48 = 0343			ICSTA   		= ICHID+3   ;   Set by OS. May or may not be the same 
+    49 				        		            ;   value as CMD_STATUS returned
+    50 = 0344			ICBAL   		= ICHID+4   ;   Set by User. Buffer address (low byte)
+    51 = 0345			ICBAH   		= ICHID+5   ;   Set by User. buffer address (high byte)
+    52 = 0346			ICPTL   		= ICHID+6   ;   Used by BASIC. Address of put byte routine. 
+    53 = 0347			ICPTH   		= ICHID+7   ;   Used by BASIC. Address of put byte routine. 
+    54 = 0348			ICBLL   		= ICHID+8   ;   buffer length (low byte) in put/get operations
+    55 = 0349			ICBLH   		= ICHID+9   ;   buffer length (high byte)
+    56 = 034A			ICAX1   		= ICHID+10  ;   auxiliary information.  Used by Open cmd 
+    57 				        		            ;   for READ/WRITE/UPDATE
+    58 				        		            ;   Bit  7   6   5   4   3   2   1   0
+    59 				        		            ;   Use  ....unused....  W   R   D   A
+    60 				        		            ;   W equals write, R equals read, 
+    61 				        		            ;   D equals directory, A equals append.
+    62 = 034B			ICAX2   		= ICHID+11  ;   Auxiliary byte two
+    63 = 034C			ICAX3   		= ICHID+12  ;   Auxiliary bytes three
+    64 = 034D			ICAX4   		= ICHID+13  ;   Auxiliary bytes four
+    65 = 034E			ICAX5   		= ICHID+14  ;   Auxiliary bytes five
+    66 = 034F			ICAX6   		= ICHID+15  ;   Auxiliary bytes six
+    67 				;
+    68 = E456			CIOV 			= $E456     ;	CIO VECTOR
+    69 				;
+    70 = 0050			BUFFER_SIZE		= 80
+    71
+    72 				START:
+    73 				OPEN_SCREEN
+    74
+    75 FFFF> 6000-6248> 20 2E +     	JSR GET_CHANNEL		; get an available IOCB channel
+    76 6003 E0 80			CPX #$80
+    77 6005 D0 03		    	BNE GOT_SCREEN_CHANNEL
+    78 6007 4C 2D 61		    	JMP DIE     		; If X == $80, no CIO available
+    79 				;
+    80 600A			GOT_SCREEN_CHANNEL:
+    81 600A 8E 04 62		    	STX E_CHANNEL		; keep track of the channel number
+    82
+    83 				; 	LDX E_CHANNEL	 X contains the IOCB channel to use
+    84 600D A9 03		    	LDA #CMD_OPEN           	; open the device
+    85 600F 9D 42 03		    	STA ICCOM,X  
+    86 				;           
+    87 6012 A9 01		    	LDA #<E_DEVICE_NAME	; address of the string of the device (E)
+    88 6014 9D 44 03		    	STA ICBAL,X
+    89 6017 A9 62		    	LDA #>E_DEVICE_NAME  
+    90 6019 9D 45 03		    	STA ICBAH,X
+    91 				;
+    92 601C A9 0C		    	LDA #OUPDATE            ; put chars to screen get chars from keyboard
+    93 601E 9D 4A 03		    	STA ICAX1,X
+    94 				;
+    95 6021 A9 00		    	LDA #$00 		; not used, but good practice to store zero here
+    96 6023 9D 4B 03		    	STA ICAX2,X
+    97 				;              	
+    98 6026 9D 49 03		    	STA ICBLH,X		; Not used
+    99 6029 9D 48 03		    	STA ICBLL,X
+   100 602C 20 56 E4		    	JSR CIOV
+   101 602F 10 03		    	BPL OK1
+   102 6031 4C 2D 61		    	JMP DIE			; Can't even write to screen!
+   103 6034			OK1:	
+   104 				; Ask user for filename
+   105 6034			ASK_QUESTION:
+   106 6034 A9 06		    	LDA #<QUESTION
+   107 6036 A0 62		    	LDY #>QUESTION
+   108 6038 20 8B 61		    	JSR PRINT_STRING
+   109 				;
+   110 603B			READ_ANSWER:
+   111 				; read the keyboard
+   112 603B AE 04 62			LDX E_CHANNEL
+   113 603E A9 05		    	LDA #CMD_GET_REC       	; Get input from keyboard
+   114 6040 9D 42 03		    	STA ICCOM,X
+   115 				;
+   116 6043 A9 49		    	LDA #<FILENAME      	; Where to store the result
+   117 6045 9D 44 03		    	STA ICBAL,X
+   118 6048 A9 62		    	LDA #>FILENAME
+   119 604A 9D 45 03		    	STA ICBAH,X  
+   120 				;          
+   121 604D A9 50		    	LDA #<BUFFER_SIZE     ; Max buffer size
+   122 604F 9D 48 03		    	STA ICBLL,X
+   123 6052 A9 00		    	LDA #>BUFFER_SIZE
+   124 6054 9D 49 03		    	STA ICBLH,X
+   125 				;
+   126 6057 20 56 E4		    	JSR CIOV
+   127 605A 10 13		    	BPL OPEN_FILE        	; all is well
+   128 605C 98			    	TYA			; Error code is in Y
+   129 605D 48			    	PHA
+   130 605E A9 17		    	LDA #<ERROR
+   131 6060 A2 62		    	LDX #>ERROR
+   132 6062 AC 1F 62		    	LDY ERROR_SIZE
+   133 6065 20 A8 61		    	JSR PRINT_STRING_NO_EOL
+   134 6068 68			    	PLA
+   135 6069 20 46 61		    	JSR PRINT_HEX
+   136 606C 4C 1E 61		    	JMP CLOSE_ALL      	; oh oh
+   137
+   138
+   139 				;
+   140 606F			OPEN_FILE:	
+   141 606F 20 2E 61		    	JSR GET_CHANNEL		; need another channel
+   142 6072 E0 80			CPX #$80
+   143 6074 D0 03		    	BNE GOT_D_CHANNEL
+   144 6076 4C 1E 61		    	JMP CLOSE_ALL     	; If X == $80, no CIO available
+   145 				;
+   146 6079			GOT_D_CHANNEL:
+   147 6079 8E 05 62		    	STX D_CHANNEL		; keep track of the channel we want to open
+   148
+   149 				;	LDX D_CHANNEL  X Contains the channel we want to use
+   150 607C A9 03		    	LDA #CMD_OPEN
+   151 607E 9D 42 03		    	STA ICCOM,X
+   152 				;
+   153 6081 A9 49		    	LDA #<FILENAME		; Address containing string of file we want to open
+   154 6083 9D 44 03		    	STA ICBAL,X		; Must include EOL character
+   155 6086 A9 62		    	LDA #>FILENAME
+   156 6088 9D 45 03		    	STA ICBAH,X
+   157 				;   
+   158 608B A9 00			LDA #$00			; We don't need to specify length
+   159 608D 9D 48 03			STA ICBLL,X
+   160 6090 9D 49 03			STA ICBLH,X
+   161 					
+   162 6093 A9 04		    	LDA #OREAD		; Open it for read
+   163 6095 9D 4A 03		    	STA ICAX1,X
+   164 6098 A9 00		    	LDA #0			; good practice to zero the second argument
+   165 609A 9D 4B 03		    	STA ICAX2,X
+   166 				    	
+   167 609D 20 56 E4		    	JSR CIOV
+   168 60A0 10 13		    	BPL OK2
+   169 60A2 98			    	TYA
+   170 60A3 48			    	PHA
+   171 60A4 A9 17		    	LDA #<ERROR
+   172 60A6 A2 62		    	LDX #>ERROR
+   173 60A8 AC 1F 62		    	LDY ERROR_SIZE
+   174 60AB 20 A8 61		    	JSR PRINT_STRING_NO_EOL
+   175 60AE 68			    	PLA
+   176 60AF 20 46 61		    	JSR PRINT_HEX
+   177 60B2 4C 1E 61		    	JMP CLOSE_ALL
+   178 60B5			OK2:	
+   179 				;
+   180 60B5			READ_NEXT:
+   181 60B5 AE 05 62			LDX D_CHANNEL		; We're using the D device
+   182 60B8 A9 07		    	LDA #CMD_GET_CHAR	; We're going to get characters
+   183 60BA 9D 42 03		    	STA ICCOM,X
+   184 				;
+   185 60BD A9 99		    	LDA #<BUFFER		; This is where we're storing our characters
+   186 60BF 9D 44 03		    	STA ICBAL,X
+   187 60C2 A9 62		    	LDA #>BUFFER
+   188 60C4 9D 45 03		    	STA ICBAH,X
+   189 				    	
+   190 60C7 A9 01		    	LDA #$01		; In this example, we'll only have
+   191 60C9 9D 48 03		    	STA ICBLL,X		; a one character buffer
+   192 60CC A9 00		    	LDA #$00
+   193 60CE 9D 49 03		    	STA ICBLH,X
+   194
+   195 60D1 20 56 E4			JSR CIOV
+   196 60D4 10 17			BPL OK22
+   197 60D6 C0 88			CPY #EOFERR		; Are we at the end of the file?
+   198 60D8 F0 44			BEQ END_OF_FILE_REACHED
+   199 60DA 98			    	TYA			; Some other error occurred
+   200 60DB 48			    	PHA
+   201 60DC A9 17		    	LDA #<ERROR
+   202 60DE A2 62		    	LDX #>ERROR
+   203 60E0 AC 1F 62		    	LDY ERROR_SIZE
+   204 60E3 20 A8 61		    	JSR PRINT_STRING_NO_EOL
+   205 60E6 68			    	PLA
+   206 60E7 20 46 61		    	JSR PRINT_HEX
+   207 60EA 4C 1E 61			JMP CLOSE_ALL
+   208 60ED			OK22:
+   209 				;
+   210 60ED			PRINT_TO_SCREEN:
+   211 60ED AE 04 62		    	LDX E_CHANNEL
+   212 60F0 A9 0B		    	LDA #CMD_PUT_CHAR	; send characters to the screen
+   213 60F2 9D 42 03		    	STA ICCOM,X
+   214 60F5 A9 99		    	LDA #<BUFFER		; address of the characters to send
+   215 60F7 9D 44 03		    	STA ICBAL,X
+   216 60FA A9 62		    	LDA #>BUFFER
+   217 60FC 9D 45 03		    	STA ICBAH,X
+   218 				    	
+   219 60FF A9 01		    	LDA #<$01		; how many characters to send
+   220 6101 9D 48 03		    	STA ICBLL,X
+   221 6104 A9 00		    	LDA #>$00
+   222 6106 9D 49 03		    	STA ICBLH,X
+   223 				    	
+   224 6109 20 56 E4		    	JSR CIOV
+   225 610C 10 A7		    	BPL READ_NEXT		; read some more
+   226 610E 98			    	TYA			; couldn't write to screen!
+   227 610F 48			    	PHA
+   228 6110 A9 17		    	LDA #<ERROR
+   229 6112 A2 62		    	LDX #>ERROR
+   230 6114 AC 1F 62		    	LDY ERROR_SIZE
+   231 6117 20 A8 61		    	JSR PRINT_STRING_NO_EOL
+   232 611A 68			    	PLA
+   233 611B 20 46 61		    	JSR PRINT_HEX
+   234 				;
+   235 611E			END_OF_FILE_REACHED:
+   236 				;
+   237 611E			CLOSE_ALL:
+   238 611E 20 C9 61			JSR WAIT_FOR_RETURN
+   239 				;
+   240 6121 AE 04 62		    	LDX E_CHANNEL
+   241 6124 20 7E 61		    	JSR CLOSE_CHANNEL
+   242
+   243 6127 AE 05 62		    	LDX D_CHANNEL
+   244 612A 20 7E 61		    	JSR CLOSE_CHANNEL
+   245 612D			DIE:
+   246 612D 60			    	RTS 
+   247 				;
+   248 				;====================================
+   249 				; GET_CHANNEL
+   250 				;  Look for an unused channel
+   251 				;  Unused channels contain an $FF in the
+   252 				;  ICHID field
+   253 				; RETURNS
+   254 				;   X - Available channel * 16
+   255 				;   if X == $80, no channel found
+   256 				; OTHER REGISTERS AFFECTED
+   257 				;   ALL
+   258 				;====================================
+   259 612E			GET_CHANNEL:
+   260 612E A0 00		   	LDY #$00
+   261 6130			CHECK_CHANNEL:
+   262 6130 98			   	TYA      		; Transfer Y to the Accumulator
+   263 6131 18			   	CLC
+   264 6132 2A			   	ROL   			; Multiply it by 16
+   265 6133 2A			   	ROL
+   266 6134 2A			   	ROL
+   267 6135 2A			   	ROL
+   268 6136 AA			   	TAX      		; Transfer A to the X register
+   269 6137 BD 40 03		   	LDA ICHID,X
+   270 613A C9 FF		   	CMP #$FF 		; if the Channel ID is FF it's available
+   271 613C F0 07		   	BEQ AVAILABLE
+   272 613E C8			   	INY
+   273 613F C9 07		   	CMP #$07
+   274 6141 D0 ED		   	BNE CHECK_CHANNEL
+   275 6143 A2 80		   	LDX #$80		; $80 indicates no channel available
+   276 6145			AVAILABLE:
+   277 6145 60			   	RTS
+   278
+   279 				;
+   280 				;====================================
+   281 				; PRINT_HEX
+   282 				;   Displays the A register on screen
+   283 				;   assumes succefull open of screen
+   284 				; RETURNS
+   285 				;   NOTHING
+   286 				; REGISTERS AFFECTED
+   287 				;   NONE
+   288 				;====================================
+   289 6146			PRINT_HEX:
+   290 6146 48			   	PHA		; Save A once
+   291 6147 48			   	PHA          	; Save A again
+   292 6148 4A			   	LSR 
+   293 6149 4A			   	LSR 
+   294 614A 4A			   	LSR 
+   295 614B 4A			   	LSR     	
+   296 614C 18			   	CLC
+   297 614D C9 0A		   	CMP #$0A
+   298 614F 10 05		   	BPL A_F1
+   299 6151 69 30		   	ADC #'0'
+   300 6153 4C 58 61		   	JMP STORE_TOP_NIBBLE
+   301 6156			A_F1:
+   302 6156 69 36		   	ADC #'A'-$0B
+   303 6158			STORE_TOP_NIBBLE:
+   304 6158 8D E9 62		   	STA HEX_BUFFER
+   305 				;   
+   306 615B 68			   	PLA		; Get back A
+   307 615C 29 0F		   	AND #$0F
+   308 615E 18			   	CLC
+   309 615F C9 0A		   	CMP #$0A
+   310 6161 10 05		   	BPL A_F2
+   311 6163 69 30		   	ADC #'0'
+   312 6165 4C 6A 61		   	JMP STORE_BOT_NIBBLE
+   313 6168			A_F2:
+   314 6168 69 36		   	ADC #'A'-$0B
+   315 616A			STORE_BOT_NIBBLE:
+   316 616A 8D EA 62		   	STA HEX_BUFFER+1 
+   317 				; $9B is already in HEX_BUFFER+2
+   318 616D 8A			   	TXA
+   319 616E 48			   	PHA		; Save X
+   320 616F 98			   	TYA
+   321 6170 48			   	PHA		; Save Y
+   322 6171 A9 E9		   	LDA #<HEX_BUFFER
+   323 6173 A0 62		   	LDY #>HEX_BUFFER
+   324 6175 20 8B 61		   	JSR PRINT_STRING
+   325 6178 68			   	PLA
+   326 6179 A8			   	TAY		; Restore Y
+   327 617A 68			   	PLA
+   328 617B AA			   	TAX		; Restore X
+   329 617C 68			   	PLA		; Restore A
+   330 617D 60			   	RTS  
+   331 				;====================================
+   332 				; CLOSE_CHANNEL
+   333 				;   Close channel if open
+   334 				;   X = channel to close
+   335 				;     will be $80 if never opened
+   336 				; RETURNS
+   337 				;   Nothing
+   338 				; OTHER REGISTERS AFFECTED
+   339 				;   ALL
+   340 				;====================================
+   341 617E			CLOSE_CHANNEL:
+   342 617E E0 7F		    	CPX #$7F
+   343 6180 10 08		    	BPL ALREADY_CLOSED
+   344 				; Close the channel
+   345 6182 A9 0C		    	LDA #CMD_CLOSE
+   346 6184 9D 42 03		    	STA ICCOM,X
+   347 6187 20 56 E4		    	JSR CIOV
+   348 618A			ALREADY_CLOSED:
+   349 618A 60			    	RTS
+   350 				;
+   351 				;====================================
+   352 				; PRINT_STRING
+   353 				;   Displays message on screen
+   354 				;   *** Assumes E_CHANNEL is open
+   355 				;   A = low byte of address
+   356 				;   Y = high byte of address
+   357 				; RETURNS
+   358 				;   NOTHING
+   359 				; OTHER REGISTERS AFFECTED
+   360 				;   ALL
+   361 				;====================================
+   362 618B			PRINT_STRING:
+   363 618B AE 04 62		    LDX E_CHANNEL
+   364 618E 9D 44 03		    STA ICBAL,X
+   365 6191 98			    TYA
+   366 6192 9D 45 03		    STA ICBAH,X
+   367 6195 A9 09		    LDA #CMD_PUT_REC       ; Prepare to send to screen
+   368 6197 9D 42 03		    STA ICCOM,X
+   369 619A A9 00		    LDA #$00
+   370 619C 9D 48 03		    STA ICBLL,X
+   371 619F A9 FF		    LDA #$FF
+   372 61A1 9D 49 03		    STA ICBLH,X
+   373 61A4 20 56 E4		    JSR CIOV
+   374 61A7 60			    RTS
+   375 				    
+   376 				;
+   377 				;====================================
+   378 				; PRINT_STRING_NO_EOL
+   379 				;   Displays message on screen
+   380 				;   *** Assumes E_CHANNEL is open
+   381 				;   A = low byte of address
+   382 				;   X = high byte of address
+   383 				;   Y = number of charactesr
+   384 				; RETURNS
+   385 				;   NOTHING
+   386 				; OTHER REGISTERS AFFECTED
+   387 				;   ALL
+   388 				;    	LDA #<ERROR
+   389 				;    	LDX #>ERROR
+   390 				;    	LDY ERROR_SIZE
+   391 				;    	JSR PRINT_STRING_NO_EOL
+   392 				;====================================    	
+   393 61A8			PRINT_STRING_NO_EOL:
+   394 61A8 8E 20 62		    STX TEMP
+   395 61AB AE 04 62		    LDX E_CHANNEL
+   396 61AE 9D 44 03		    STA ICBAL,X
+   397 61B1 AD 20 62		    LDA TEMP
+   398 61B4 9D 45 03		    STA ICBAH,X	
+   399 61B7 A9 0B		    LDA #CMD_PUT_CHAR       ; Prepare to send to screen
+   400 61B9 9D 42 03		    STA ICCOM,X
+   401 61BC 98			    TYA
+   402 61BD 9D 48 03		    STA ICBLL,X
+   403 61C0 A9 00		    LDA #$00
+   404 61C2 9D 49 03		    STA ICBLH,X
+   405 61C5 20 56 E4		    JSR CIOV
+   406 61C8 60			    RTS
+   407 				    
+   408 				;====================================
+   409 				; WAIT_FOR_RETURN
+   410 				;   If screen_keyboard_channel is open
+   411 				;   then waits for enter key
+   412 				; RETURNS
+   413 				;   Nothing
+   414 				; OTHER REGISTERS AFFECTED
+   415 				;   None
+   416 				;====================================    	
+   417 61C9			WAIT_FOR_RETURN:    	
+   418 				; Wait for enter key from screen *IF* we have the screen and keyboard channel
+   419 61C9 48				PHA
+   420 61CA 8A				TXA
+   421 61CB 48				PHA
+   422 61CC 98				TYA
+   423 61CD 48				PHA
+   424 61CE AE 04 62		    	LDX E_CHANNEL
+   425 61D1 E0 7F		    	CPX #$7F
+   426 61D3 10 2B		    	BPL WFE_DONE
+   427 61D5 A9 35		    	LDA #<PRESS_RETURN
+   428 61D7 A0 62		    	LDY #>PRESS_RETURN
+   429 61D9 20 8B 61		    	JSR PRINT_STRING
+   430 				    
+   431 				; wait for a key
+   432 61DC AE 04 62		    	LDX E_CHANNEL
+   433 61DF A9 05		    	LDA #CMD_GET_REC       	; Get input from keyboard
+   434 61E1 9D 42 03		    	STA ICCOM,X
+   435 61E4 A9 35		    	LDA #<PRESS_RETURN   ; Where to store the result
+   436 61E6 9D 44 03		    	STA ICBAL,X
+   437 61E9 A9 62		    	LDA #>PRESS_RETURN
+   438 61EB 9D 45 03		    	STA ICBAH,X            
+   439 61EE A9 1F		    	LDA #<ERROR_SIZE     ; Max buffer size
+   440 61F0 9D 48 03		    	STA ICBLL,X
+   441 61F3 A9 62		    	LDA #>ERROR_SIZE
+   442 61F5 9D 49 03		    	STA ICBLH,X
+   443 61F8 20 56 E4		    	JSR CIOV
+   444 61FB 68			    	PLA
+   445 61FC A8			    	TAY
+   446 61FD 68			    	PLA
+   447 61FE AA			    	TAX
+   448 61FF 68			    	PLA
+   449 6200			WFE_DONE:
+   450 6200 60			    	RTS  
+   451 				;====================================
+   452 				; DATA
+   453 				;====================================
+   454 6201 45 3A 9B		E_DEVICE_NAME:	.BYTE 'E:',EOL
+   455 				;
+   456 6204 FF			E_CHANNEL: 	.BYTE $FF
+   457 6205 FF			D_CHANNEL: 	.BYTE $FF
+   458 				;
+   459 6206 46 69 6C 65 20 74 + QUESTION:	.BYTE 'File to display:',EOL
+   460 6217 45 52 52 4F 52 3A + ERROR:		.BYTE 'ERROR: ', EOL
+   461 621F 07			ERROR_SIZE	.BYTE 7
+   462 6220 00			TEMP		.BYTE 0
+   463 6221 43 61 6E 27 74 20 + CANT_FIND_FILE: .BYTE 'Can''t open the file',EOL
+   464 6235 50 72 65 73 73 20 + PRESS_RETURN	.BYTE 'Press RETURN to end', EOL
+   465 				;
+   466 = 6249			FILENAME:	.DS   BUFFER_SIZE
+   467 = 6299			BUFFER:		.DS   BUFFER_SIZE
+   468 62E9-62EB> 00 00 9B	HEX_BUFFER: 	.BYTE 0,0,EOL
+   469 				;
+   470 02E0-02E1> 00 60		     run START
