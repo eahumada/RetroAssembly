@@ -1,0 +1,360 @@
+8000     .PAGE ".       KERNEL SUBROUTINES"
+8001     .LOCAL
+8002 ;************************************
+8003 ;
+8004 ; KERNEL CODE -- RAM and coded subroutines
+8005 ;                to support kernel macros
+8006 ;
+8007 ;************************************
+8008 ;
+8009 ; first, RAM usage
+8010 ;
+8011 ; note that only QQTRAP needs to assume an initial value
+8012 ;   and even that is not necessary if the user always
+8013 ;   codes a TRAP macro.
+8014 ;
+8015 QQLEN .BYTE 0
+8016 QQCOLR .BYTE 0
+8017 QQENUM .WORD 0
+8018 QQCFLG .WORD 0
+8019 QQTRAP .WORD QQERR
+8020 QQPASS .WORD 0,0
+8021 QQCMP .WORD 0,0
+8022 QQPUTB .BYTE 0
+8023 QQLOOP *= *+18
+8024 I   =   QQLOOP
+8025 J   =   QQLOOP+2
+8026 K   =   QQLOOP+4
+8027 ;
+8028 ;************************************
+8029 ; Actual ToolKit Subroutines
+8030 ;************************************
+8031 ;
+8032 ; Multiply subroutine
+8033 ;
+8034 QQRMUL
+8035     LDA #0
+8036     STA 224
+8037     STA 224+1
+8038     LDY #8
+8039 ?L1
+8040     ASL A
+8041     ROL 224+1
+8042     ASL 212+1
+8043     BCC ?L2
+8044     CLC 
+8045     ADC 212
+8046     BCC ?L2
+8047     INC 224+1
+8048 ?L2
+8049     DEY 
+8050     BNE ?L1
+8051     STA 212
+8052     LDA 224+1
+8053     STA 212+1
+8054     RTS 
+8055 ;
+8056 ; Divide subroutine
+8057 ;
+8058 QQRDIV
+8059     LDY #8
+8060     LDA 212
+8061     STA 224+2
+8062     LDA 212+1
+8063 ?LA1
+8064     ASL 224+2
+8065     ROL A
+8066     CMP 224+1
+8067     BCC ?LA2
+8068     SBC 224+1
+8069     INC 224+2
+8070 ?LA2
+8071     DEY 
+8072     BNE ?LA1
+8073     STA 224
+8074     LDA #0
+8075     STA 212+1
+8076     LDA 224+2
+8077     STA 212
+8078     RTS 
+8079 ;
+8080 ; Get a single byte
+8081 ;
+8082 QQGET
+8083      T16  
+8084     TAX 
+8085     LDA #7
+8086     STA $0342,X
+8087     LDA #0
+8088     STA $0348,X
+8089     STA $0349,X
+8090     JSR $E456
+8091      ERRCHK  
+8092     RTS 
+8093 ;
+8094 ; Put a single byte
+8095 ;
+8096 QQPUT
+8097      T16  
+8098     TAX 
+8099     LDA #11
+8100     STA $0342,X
+8101     LDA #0
+8102     STA $0348,X
+8103     STA $0349,X
+8104     LDA QQPASS+2
+8105     JSR $E456
+8106      ERRCHK  
+8107     RTS 
+8108 ; calculate the length of a string
+8109 ;
+8110 ; print subroutine
+8111 ;
+8112 QQPREC
+8113     LDA #9
+8114     STA $0342,X
+8115     JSR $E456
+8116      ERRCHK  
+8117     RTS 
+8118 ;
+8119 ; print an integer number (PRINUM macro)
+8120 ;
+8121 QQPIN
+8122     JSR $D9AA   ;I>FP
+8123     JSR $D8E6   ; FP>ASCII
+8124     LDA 243
+8125     STA 203
+8126     LDA 243+1
+8127     STA 204
+8128     JSR QQSLEN
+8129     CPY QQPASS+1
+8130     BEQ @NOERR
+8131     BCC @NOERR
+8132     LDY #175
+8133     JMP (QQTRAP)
+8134 @NOERR
+8135     SEC 
+8136     LDA QQPASS+1
+8137     SBC QQLEN
+8138     STA QQPASS+1
+8139     BEQ @LD3
+8140 @LD1
+8141     LDA #32
+8142     STA QQPUTB
+8143      PUT  QQPASS,QQPUTB
+8144     DEC QQPASS+1
+8145     BNE @LD1
+8146 @LD3
+8147     LDY #0
+8148 @LD2
+8149     LDA (203),Y
+8150     AND #127
+8151     STA QQPUTB
+8152      PUSHY  
+8153      PUT  QQPASS,QQPUTB
+8154      PULLY  
+8155     INY 
+8156     CPY QQLEN
+8157     BNE @LD2
+8158     RTS 
+8159 ;
+8160 ; input subroutine
+8161 ;
+8162 QQIN
+8163     LDA #5
+8164     STA $0342,X
+8165     JSR $E456
+8166      ERRCHK  
+8167     RTS 
+8168 ;
+8169 ; ININUM suppor
+8170 ;
+8171 QQININ
+8172     STA QQPASS+2
+8173      INPUT  QQPASS+2,$0580
+8174      VPOKE  243,$0580
+8175      POKE  242,0
+8176     JSR $D800
+8177     BCC @NO2ERR
+8178     JMP (QQTRAP)
+8179 @NO2ERR
+8180     JSR $D9D2
+8181     BCC @NERR2
+8182     JMP (QQTRAP)
+8183 @NERR2
+8184     RTS 
+8185 ;
+8186 ; LOAD a file (LOAD macro)
+8187 ;
+8188 QQLOAD
+8189      GET  5,QQPASS+2
+8190      GET  5,QQPASS+2+1
+8191     LDA QQPASS+2+1
+8192     AND QQPASS+2
+8193     CMP #255
+8194     BEQ ?LE7
+8195     LDY #176
+8196     JMP (QQTRAP)
+8197 ?LE7
+8198      GET  5,QQPASS+2
+8199      GET  5,QQPASS+3
+8200      GET  5,QQPASS
+8201      GET  5,QQPASS+1
+8202      CALC  QQPASS
+8203      MINUS  QQPASS+2
+8204      PLUS  1
+8205     LDX #$50
+8206     LDA 212
+8207     STA $0348,X
+8208     LDA 212+1
+8209     STA $0349,X
+8210     LDA QQPASS+2
+8211     STA $0344,X
+8212     LDA QQPASS+3
+8213     STA $0345,X
+8214     LDA #7
+8215     STA $0342,X
+8216     JSR $E456
+8217      ERRCHK  
+8218     CPY #3      ; no error...about to get EOF?
+8219     BEQ ?LE8    ; yes
+8220     JMP ?LE7    ; no...get another segment
+8221 ?LE8  CLOSE  5
+8222     RTS 
+8223 ;
+8224 ; execute GR subroutine
+8225 ;
+8226 QQGR
+8227     STA QQPASS+2
+8228      CLOSE  6
+8229     LDA QQPASS+2
+8230     AND #$F0
+8231     EOR #$10
+8232     ORA #$0C
+8233     STA QQPASS+2+1
+8234      OPEN  6,QQPASS+2+1,QQPASS+2,"S:"
+8235     RTS
+;8236 ;
+;8237 ; execute DRAWTO subroutine
+;8238 ;
+8239 QQDRAW
+;8240     LDX #$60
+;8241     LDA #$11
+;8242     STA $0342,X
+;8243     JSR $E456
+;8244      ERRCHK  
+8245     RTS 
+8246 ;
+8247 ; execute FILL subroutine
+8248 ;
+8249 QQFILL
+;8250     STA $02FD
+;8251     LDX #$60
+;8252     LDA #$12
+;8253     STA $0342,X
+;8254     JSR $E456
+;8255      ERRCHK  
+8256     RTS 
+8274 ;
+8275 ; support for STOP macro
+8276 ;
+8277 QQSTOP
+8278     PHP 
+8279     PHA 
+8280      PUSHX  
+8281      PUSHY  
+8282      SOUND 0,32,10,14
+8283      WAIT 60
+8284      SOUND 0,0,0,0
+8285 ?PLF6
+8286     LDA $D01F
+8287     CMP #6
+8288     BNE ?PLF6
+8289      PULLY  
+8290      PULLX  
+8291     PLA 
+8292     PLP 
+8293     RTS 
+8257 ;
+8258 ; Support for TRAP and error messages
+8259 ;
+8260 QQERMSG .BYTE "Fatal #"
+8261 QQERMLEN .WORD *-QQERMSG
+8262 QQERR
+8263     STY QQENUM
+8264      POKE  QQENUM+1,0
+8265      CR  
+8266      CR  
+8267      BPUT  0,QQERMSG,QQERMLEN
+8268      PRINUM  0,QQENUM,3
+8269      CR  
+8270      CR  
+8271      PRINTSTR "[START] return DOS"
+8272      STOP  
+8273     JMP ($0A)
+8294 ;
+8295 ; support for BMOVE macro
+8296 ;
+8297 QQBMOV
+8298     LDY #0
+8299     STY QQPASS
+8300     STY QQPASS+1
+8301 ?LG1
+8302     LDA (203),Y
+8303     STA (214),Y
+8304      DINC  203
+8305      DINC  214
+8306      DINC  QQPASS
+8307      DEQCMP  QQPASS,QQPASS+2
+8308     BNE ?LG1
+8309     RTS 
+8310 ;
+8311 ; support for PGMOVE macro
+8312 ;
+8313 QQPGMV
+8314     STA 215
+8315     TYA 
+8316     PHA 
+8317     LDY #0
+8318     STY 203
+8319     STY 214
+8320 @LH1
+8321     LDA (203),Y
+8322     STA (214),Y
+8323     INY
+8324     BNE @LH1
+8325     PLA
+8326     TAY
+8327     RTS
+8328 ;
+8329 ; support for BCLR   macro
+8330 ;
+8331 QQBCLR
+8332     TYA 
+8333     PHA 
+8334     LDY #0
+8335     STY QQPASS
+8336     STY QQPASS+1
+8337 ?LI1
+8338     LDA #0
+8339     STA (203),Y
+8340      DINC  203
+8341      DINC  QQPASS
+8342      DEQCMP  QQPASS,QQPASS+2
+8343     BNE ?LI1
+8344     PLA 
+8345     TAY 
+8346     RTS 
+8347 ;
+8348 ; QQSLEN -- find length of a string
+8349 ;   which is terminated by a char with
+8350 ;   MSBit on.
+8351 ;
+8352 QQSLEN
+8353     LDY #255
+8354 ?LB1 INY 
+8355     LDA (203),Y
+8356     BPL ?LB1
+8357     INY 
+8358     STY QQLEN
+8359     RTS 
